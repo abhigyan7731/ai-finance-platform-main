@@ -230,7 +230,35 @@ export async function getUserTransactions(query = {}) {
 // Scan Receipt
 export async function scanReceipt(file) {
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const fallbackModels = ["gemini-1.5-flash", "gemini-1.5", "gemini-1.0", "text-bison-001", "chat-bison-001"];
+    let modelCandidates = [];
+
+    if (process.env.GEMINI_MODEL) {
+      modelCandidates.push(process.env.GEMINI_MODEL);
+    }
+
+    // Try to retrieve supported models from API and filter candidates.
+    try {
+      if (typeof genAI.listModels === "function") {
+        const modelsList = await genAI.listModels();
+        const availableNames = (modelsList?.models || [])
+          .map((m) => (typeof m.name === "string" ? m.name.replace(/^models\//, "") : null))
+          .filter(Boolean);
+
+        const supportedGemini = fallbackModels.filter(
+          (m) => availableNames.includes(m) || availableNames.includes(`models/${m}`)
+        );
+
+        modelCandidates = [...new Set([...modelCandidates, ...supportedGemini])];
+      }
+    } catch (err) {
+      console.warn("Could not list models from Google Generative API", err);
+    }
+
+    // fall back to known candidate list if listModels does not work
+    if (modelCandidates.length === 0) {
+      modelCandidates = fallbackModels;
+    }
 
     // Convert File to ArrayBuffer
     const arrayBuffer = await file.arrayBuffer();
@@ -257,29 +285,45 @@ export async function scanReceipt(file) {
       If its not a recipt, return an empty object
     `;
 
-    let text;
-    try {
-      const result = await model.generateContent([
-        {
-          inlineData: {
-            data: base64String,
-            mimeType: file.type,
-          },
-        },
-        prompt,
-      ]);
+    let text = null;
+    let lastError = null;
 
-      const response = await result.response;
-      text = await response.text();
-    } catch (aiError) {
-      const message = aiError?.message || String(aiError);
-      console.error("Generative AI error during receipt scan:", message, aiError);
-      if (/not found|404/i.test(message)) {
-        // Model not available for this API version — return null so caller can
-        // continue without a scanned receipt instead of crashing with a 500.
-        return null;
+    for (const candidate of modelCandidates) {
+      try {
+        const model = genAI.getGenerativeModel({ model: candidate });
+        // Gemini expects text prompt first, then image input.
+        const result = await model.generateContent([
+          prompt,
+          {
+            inlineData: {
+              data: base64String,
+              mimeType: file.type,
+            },
+          },
+        ]);
+
+        const response = await result.response;
+        text = await response.text();
+        break;
+      } catch (aiError) {
+        lastError = aiError;
+        const message = aiError?.message || String(aiError);
+        console.warn(`Receipt scan failed for model ${candidate}:`, message);
+
+        if (/not found|404/i.test(message)) {
+          // Try the next candidate model.
+          continue;
+        }
+
+        // For all other errors, abort and bubble up.
+        console.error(`Receipt scan failed with model ${candidate}:`, aiError);
+        throw aiError;
       }
-      throw aiError;
+    }
+
+    if (!text) {
+      console.error("Receipt scan failed for all Gemini models", lastError);
+      return null;
     }
     const cleanedText = text.replace(/```(?:json)?\n?/g, "").trim();
 

@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "scan": "npm run lint",
     "email": "email dev",
     "postinstall": "prisma generate"
   },

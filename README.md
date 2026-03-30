@@ -1,6 +1,10 @@
 # Full Stack AI Fianace Platform with Next JS, Supabase, Tailwind, Prisma, Inngest, ArcJet, Shadcn 
 ### Make sure to create a `.env` file with following variables -
 
+> Run lint / scan:
+> - npm run lint
+> - npm run scan (alias for lint)
+
 ```
 DATABASE_URL=
 DIRECT_URL=

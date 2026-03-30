@@ -26,11 +26,17 @@ export function ReceiptScanner({ onScanComplete }) {
   };
 
   useEffect(() => {
-    if (scannedData && !scanReceiptLoading) {
-      onScanComplete(scannedData);
-      toast.success("Receipt scanned successfully");
+    if (!scanReceiptLoading) {
+      if (scannedData) {
+        onScanComplete(scannedData);
+        toast.success("Receipt scanned successfully");
+      } else if (scannedData === null) {
+        toast.error(
+          "Unable to extract data from receipt. Please try another image or enter manually."
+        );
+      }
     }
-  }, [scanReceiptLoading, scannedData]);
+  }, [scanReceiptLoading, scannedData, onScanComplete]);
 
   return (
     <div className="flex items-center gap-4">
